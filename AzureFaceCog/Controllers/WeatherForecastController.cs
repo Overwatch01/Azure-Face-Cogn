@@ -53,7 +53,7 @@ namespace AzureFaceCog.Controllers
         public WeatherForecastController(IHostingEnvironment env)
         {
             _env = env;
-            client = new FaceClient(new ApiKeyServiceClientCredentials("***********"))
+            client = new FaceClient(new ApiKeyServiceClientCredentials("********************"))
             {
                 Endpoint = "https://eastus.api.cognitive.microsoft.com"
             };
@@ -151,7 +151,9 @@ namespace AzureFaceCog.Controllers
                 // Submit image to API. 
                 var attrs = new List<FaceAttributeType> { FaceAttributeType.HeadPose };
 
-                var faces = await client.Face.DetectWithUrlWithHttpMessagesAsync("https://images.generated.photos/144AF0RRO5TihRwAcxlCIjnJrUiUlAhCoMuVlhNiZMQ/rs:fit:256:256/Z3M6Ly9nZW5lcmF0/ZWQtcGhvdG9zL3Yz/XzAxNDcwMjIuanBn.jpg", returnFaceId: false, returnFaceAttributes: attrs);
+                //TODO: USE IMAGE URL OF NETWORK
+               // var faces = await client.Face.DetectWithUrlWithHttpMessagesAsync("https://images.generated.photos/144AF0RRO5TihRwAcxlCIjnJrUiUlAhCoMuVlhNiZMQ/rs:fit:256:256/Z3M6Ly9nZW5lcmF0/ZWQtcGhvdG9zL3Yz/XzAxNDcwMjIuanBn.jpg", returnFaceId: false, returnFaceAttributes: attrs);
+                var faces = await client.Face.DetectWithUrlWithHttpMessagesAsync(imageUrl, returnFaceId: false, returnFaceAttributes: attrs);
                 var headPose = faces.Body.First().FaceAttributes?.HeadPose;
 
                 
