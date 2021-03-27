@@ -53,7 +53,7 @@ namespace AzureFaceCog.Controllers
         public WeatherForecastController(IHostingEnvironment env)
         {
             _env = env;
-            client = new FaceClient(new ApiKeyServiceClientCredentials("e8ef40efa4704769860e661c210a0fc5"))
+            client = new FaceClient(new ApiKeyServiceClientCredentials("***********"))
             {
                 Endpoint = "https://eastus.api.cognitive.microsoft.com"
             };
