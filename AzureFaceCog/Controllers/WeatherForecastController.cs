@@ -48,8 +48,11 @@ namespace AzureFaceCog.Controllers
 
         private readonly static int activeFrames = 14;
 
-        public WeatherForecastController()
+        private readonly IHostingEnvironment _env;
+
+        public WeatherForecastController(IHostingEnvironment env)
         {
+            _env = env;
             client = new FaceClient(new ApiKeyServiceClientCredentials("e8ef40efa4704769860e661c210a0fc5"))
             {
                 Endpoint = "https://eastus.api.cognitive.microsoft.com"
@@ -89,13 +92,10 @@ namespace AzureFaceCog.Controllers
                     FileStream s2 = new FileStream(Path.Combine(FilePath, fileName), FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
                 }
                 //Extract
-             //   ExtractFrameFromVideo(FilePath, fileName);
+                ExtractFrameFromVideo(FilePath, fileName);
 
                 //Convert Image to stream
-                await ConvertImagesToMemoryStream(FilePath);
-
-                //
-               // Doprocess();
+                var headPose = await ConvertImagesToMemoryStream(FilePath);
 
                 return Ok("Success");
             }
@@ -105,37 +105,6 @@ namespace AzureFaceCog.Controllers
                 return BadRequest(ex.Message);
             }
         }
-
-        private async Task<LiveCameraResult> ConvertImagesToMemoryStream(string filePath)
-        {
-            var files = Directory.GetFiles(filePath);
-            foreach (var item in files)
-            {
-                //MemoryStream ms = new MemoryStream();
-                //using (FileStream file = new FileStream(item, FileMode.Open, FileAccess.Read))
-                //    file.CopyTo(ms);
-
-                FileStream fileStream = new FileStream(item, FileMode.Open);
-                Image image = Image.FromStream(fileStream);
-                MemoryStream memoryStream = new MemoryStream();
-                image.Save(memoryStream, ImageFormat.Jpeg);
-                //Close File Stream
-                fileStream.Close();
-
-                // Submit image to API. 
-                var attrs = new List<FaceAttributeType> { FaceAttributeType.HeadPose };
-
-                var faces = await client.Face.DetectWithUrlWithHttpMessagesAsync("https://images.generated.photos/144AF0RRO5TihRwAcxlCIjnJrUiUlAhCoMuVlhNiZMQ/rs:fit:256:256/Z3M6Ly9nZW5lcmF0/ZWQtcGhvdG9zL3Yz/XzAxNDcwMjIuanBn.jpg", returnFaceId: false, returnFaceAttributes: attrs);
-
-
-
-
-                // Output. 
-                return new LiveCameraResult { };
-            }
-            return null;
-        }
-
 
         private void ExtractFrameFromVideo(string directory, string fiileName)
         {
@@ -153,6 +122,47 @@ namespace AzureFaceCog.Controllers
                 engine.GetThumbnail(mp4, outputFile, options);
                 i++;
             }
+        }
+
+        private async Task<HeadPose> ConvertImagesToMemoryStream(string filePath)
+        {
+            var files = Directory.GetFiles(filePath);
+            foreach (var item in files)
+            {
+                if (item.EndsWith("mp4"))
+                {
+                    continue;
+                }
+                //MemoryStream ms = new MemoryStream();
+                //using (FileStream file = new FileStream(item, FileMode.Open, FileAccess.Read))
+                //    file.CopyTo(ms);
+
+                FileStream fileStream = new FileStream(item, FileMode.Open);
+                Image image = Image.FromStream(fileStream);
+                MemoryStream memoryStream = new MemoryStream();
+                image.Save(memoryStream, ImageFormat.Jpeg);
+                //Close File Stream
+                fileStream.Close();
+
+                var fileName = item.Split('\\').Last();
+
+                var imageUrl = Path.Combine(_env.ContentRootPath, $"files/{fileName}");
+
+                // Submit image to API. 
+                var attrs = new List<FaceAttributeType> { FaceAttributeType.HeadPose };
+
+                var faces = await client.Face.DetectWithUrlWithHttpMessagesAsync("https://images.generated.photos/144AF0RRO5TihRwAcxlCIjnJrUiUlAhCoMuVlhNiZMQ/rs:fit:256:256/Z3M6Ly9nZW5lcmF0/ZWQtcGhvdG9zL3Yz/XzAxNDcwMjIuanBn.jpg", returnFaceId: false, returnFaceAttributes: attrs);
+                var headPose = faces.Body.First().FaceAttributes?.HeadPose;
+
+                
+                processStep = 1;
+                Doprocess(headPose);
+
+
+                // Output. 
+                return headPose;
+            }
+            return null;
         }
 
 
