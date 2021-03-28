@@ -27,7 +27,7 @@ namespace AzureFaceCog.Controllers
         };
 
         private static IFaceClient client;
-          private readonly double _headPitchMaxThreshold = 30;
+        private readonly double _headPitchMaxThreshold = 30;
 
         private readonly double _headPitchMinThreshold = -15;
 
@@ -44,7 +44,6 @@ namespace AzureFaceCog.Controllers
 
         private static int processStep = 1;
 
-        private static List<double> buff = new List<double>();
 
         private readonly static int activeFrames = 14;
 
@@ -53,7 +52,7 @@ namespace AzureFaceCog.Controllers
         public WeatherForecastController(IHostingEnvironment env)
         {
             _env = env;
-            client = new FaceClient(new ApiKeyServiceClientCredentials("********************"))
+            client = new FaceClient(new ApiKeyServiceClientCredentials("**************************"))
             {
                 Endpoint = "https://eastus.api.cognitive.microsoft.com"
             };
@@ -73,7 +72,7 @@ namespace AzureFaceCog.Controllers
         }
 
         [HttpPost]
-        public async Task<IActionResult> ProcessVideoFile([FromBody] ImageRequest req)
+        public async Task<IActionResult> ProcessVideoFile([FromBody] ImageRequest req, [FromQuery] int process = 1)
         {
             try
             {
@@ -87,17 +86,15 @@ namespace AzureFaceCog.Controllers
                     if (!Directory.Exists(FilePath))
                     {
                         Directory.CreateDirectory(FilePath);
+                        System.IO.File.WriteAllBytes(Path.Combine(FilePath, fileName), imageBytes);
                     }
-                    System.IO.File.WriteAllBytes(Path.Combine(FilePath, fileName), imageBytes);
-                    FileStream s2 = new FileStream(Path.Combine(FilePath, fileName), FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
                 }
                 //Extract
                 ExtractFrameFromVideo(FilePath, fileName);
 
                 //Convert Image to stream
-                var headPose = await ConvertImagesToMemoryStream(FilePath);
-
-                return Ok("Success");
+                var headPoseResult = await RunHeadGestureOnImageFrame(FilePath, process);
+                return Ok(headPoseResult);
             }
             catch (Exception ex)
             {
@@ -124,8 +121,11 @@ namespace AzureFaceCog.Controllers
             }
         }
 
-        private async Task<HeadPose> ConvertImagesToMemoryStream(string filePath)
+        private async Task<string> RunHeadGestureOnImageFrame(string filePath, int process)
         {
+            var headGestureResult = "";
+            var buff = new List<double>();
+
             var files = Directory.GetFiles(filePath);
             foreach (var item in files)
             {
@@ -133,87 +133,52 @@ namespace AzureFaceCog.Controllers
                 {
                     continue;
                 }
-                //MemoryStream ms = new MemoryStream();
-                //using (FileStream file = new FileStream(item, FileMode.Open, FileAccess.Read))
-                //    file.CopyTo(ms);
-
-                FileStream fileStream = new FileStream(item, FileMode.Open);
-                Image image = Image.FromStream(fileStream);
-                MemoryStream memoryStream = new MemoryStream();
-                image.Save(memoryStream, ImageFormat.Jpeg);
-                //Close File Stream
-                fileStream.Close();
-
                 var fileName = item.Split('\\').Last();
+                var imageName = fileName.Split('.').First();
 
-                var imageUrl = Path.Combine(_env.ContentRootPath, $"files/{fileName}");
+                //UPLOAD IMAGE TO FIREBASE 
+                // var baseString = GetBaseStringFromImagePath(item);
+                byte[] imageArray = System.IO.File.ReadAllBytes(item);
+                var uploadedContent = await FireBase.UploadDocumentAsync(fileName, imageName, item);
 
                 // Submit image to API. 
                 var attrs = new List<FaceAttributeType> { FaceAttributeType.HeadPose };
 
                 //TODO: USE IMAGE URL OF NETWORK
-               // var faces = await client.Face.DetectWithUrlWithHttpMessagesAsync("https://images.generated.photos/144AF0RRO5TihRwAcxlCIjnJrUiUlAhCoMuVlhNiZMQ/rs:fit:256:256/Z3M6Ly9nZW5lcmF0/ZWQtcGhvdG9zL3Yz/XzAxNDcwMjIuanBn.jpg", returnFaceId: false, returnFaceAttributes: attrs);
-                var faces = await client.Face.DetectWithUrlWithHttpMessagesAsync(imageUrl, returnFaceId: false, returnFaceAttributes: attrs);
+                var faces = await client.Face.DetectWithUrlWithHttpMessagesAsync(uploadedContent, returnFaceId: false, returnFaceAttributes: attrs);
                 var headPose = faces.Body.First().FaceAttributes?.HeadPose;
 
-                
-                processStep = 1;
-                Doprocess(headPose);
+                var pitch = headPose.Pitch;
+                var roll = headPose.Roll;
+                var yaw = headPose.Yaw;
 
 
-                // Output. 
-                return headPose;
+                if (process == 1)
+                {
+                    headGestureResult = StepOne(buff, pitch);
+
+                    if (!string.IsNullOrEmpty(headGestureResult))
+                        return headGestureResult;
+                }
+
+                if (process == 2)
+                {
+                    headGestureResult = StepTwo(buff, yaw);
+                    if (!string.IsNullOrEmpty(headGestureResult))
+                        return headGestureResult;
+                }
+
+                if (process == 3)
+                {
+                    headGestureResult = StepThree(buff, roll);
+                    if (!string.IsNullOrEmpty(headGestureResult))
+                        return headGestureResult;
+                }
             }
-            return null;
+            return "Head Gesture not completed";
         }
 
-
-        private void Doprocess(HeadPose headPose)
-        {
-            processIdel = false;
-
-            var pitch = headPose.Pitch;
-            var roll = headPose.Roll;
-            var yaw = headPose.Yaw;
-
-            switch (processStep)
-            {
-                case 1:
-                    if (firstInProcess)
-                    {
-                        firstInProcess = false;
-                     //   Console.WriteLine("Step1: detect head pose up and down.");
-                    //    IndicateMsg = "Please look Up and Down!";
-                    }
-
-                    StepOne(pitch);
-                    break;
-                case 2:
-                    if (firstInProcess)
-                    {
-                        firstInProcess = false;
-                     //   Console.WriteLine("Step2: detect head pose Left and Right.");
-                    //    IndicateMsg = "Please look Left and Right!";
-                    }
-
-                    StepTwo(yaw);
-                    break;
-                case 3:
-                    if (firstInProcess)
-                    {
-                        firstInProcess = false;
-                     //   Console.WriteLine("Step3: detect head pose roll left and Right.");
-                     //   IndicateMsg = "Please roll you face Left and Right!";
-                    }
-
-                    StepThree(roll);
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        private void StepOne(double pitch)
+        private string StepOne(List<double> buff, double pitch)
         {
             buff.Add(pitch);
             if (buff.Count > activeFrames)
@@ -224,26 +189,17 @@ namespace AzureFaceCog.Controllers
             var max = buff.Max();
             var min = buff.Min();
 
-            var maxCorrection = max < 0 ? 0 : Convert.ToInt32(max);
-            var minCorrection = min > 0 ? 0 : Convert.ToInt32(Math.Abs(min));
-
-            // MsgProcessVerticalTop = GetVerticalTopProgressBarString(maxCorrection);
-            // MsgProcessVerticalDown = GetVerticalDownProgressBarString(minCorrection);
-
             if (max > _headPitchMaxThreshold && min < _headPitchMinThreshold)
             {
-              //  IndicateMsg = "Nodding Detected!";
-                Console.WriteLine("Nodding Detected success.");
-               // CleanBuffAndSetToStep(2);
-                Wait2SecondsToReleaseProcess();
+                return "Nodding Detected success.";
             }
             else
             {
-                processIdel = true;
+                return null;
             }
         }
 
-        private void StepTwo(double yaw)
+        private string StepTwo(List<double> buff, double yaw)
         {
             buff.Add(yaw);
             if (buff.Count > activeFrames)
@@ -254,26 +210,17 @@ namespace AzureFaceCog.Controllers
             var max = buff.Max();
             var min = buff.Min();
 
-            var maxCorrection = max < 0 ? 0 : Convert.ToInt32(max * 2);
-            var minCorrection = min > 0 ? 0 : Convert.ToInt32(Math.Abs(min * 2));
-
-         //   MsgProcessHorizontalLeft = GetHorizontalLeftProgressBarString(maxCorrection);
-          //  MsgProcessHorizontalRight = GetHorizontalRightProgressBarString(minCorrection);
-
             if (min < _headYawMinThreshold && max > _headYawMaxThreshold)
             {
-              //  CleanBuffAndSetToStep(3);
-             //   IndicateMsg = "Shaking Detected!";
-                Console.WriteLine("Shaking Detected success.");
-                Wait2SecondsToReleaseProcess();
+                return "Shaking Detected success.";
             }
             else
             {
-                processIdel = true;
+                return null;
             }
         }
 
-        private void StepThree(double roll)
+        private string StepThree(List<double> buff, double roll)
         {
             buff.Add(roll);
             if (buff.Count > activeFrames)
@@ -284,43 +231,16 @@ namespace AzureFaceCog.Controllers
             var max = buff.Max();
             var min = buff.Min();
 
-            var maxCorrection = max < 0 ? 0 : Convert.ToInt32(max * 2);
-            var minCorrection = min > 0 ? 0 : Convert.ToInt32(Math.Abs(min * 2));
-
-          //  MsgProcessHorizontalLeft = GetHorizontalLeftProgressBarString(maxCorrection);
-           // MsgProcessHorizontalRight = GetHorizontalRightProgressBarString(minCorrection);
-
             if (min < _headRollMinThreshold && max > _headRollMaxThreshold)
             {
-              //  StopProcess();
-               // IndicateMsg = "Rolling Detected!";
-                Console.WriteLine("Rolling Detected success.");
                 Console.WriteLine("All head pose detection finished.");
-                Wait2SecondsToReleaseProcess();
+                return "Rolling Detected success.";
             }
             else
             {
-                processIdel = true;
+                return null;
             }
         }
-
-        private void CleanBuffAndSetToStep(int step)
-        {
-            buff = new List<double>();
-            firstInProcess = true;
-            processStep = step;
-        }
-
-        private void Wait2SecondsToReleaseProcess()
-        {
-            new Task(
-                () =>
-                {
-                    Thread.Sleep(2000);
-                    processIdel = true;
-                }).Start();
-        }
-
     }
 }
 

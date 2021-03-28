@@ -6,6 +6,7 @@
 
 
   <ItemGroup>
+    <PackageReference Include="FirebaseStorage.net" Version="1.0.3" />
     <PackageReference Include="MediaToolKit.B" Version="1.0.2" />
     <PackageReference Include="Microsoft.Azure.CognitiveServices.Vision.Face" Version="2.2.0-preview" />
     <PackageReference Include="System.Configuration.ConfigurationManager" Version="5.0.0" />
