@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using MediaToolkit;
 using MediaToolkit.Model;
@@ -13,7 +11,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.CognitiveServices.Vision.Face;
 using Microsoft.Azure.CognitiveServices.Vision.Face.Models;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
 namespace AzureFaceCog.Controllers
 {
@@ -27,7 +24,7 @@ namespace AzureFaceCog.Controllers
         };
 
         private static IFaceClient client;
-        private readonly double _headPitchMaxThreshold = 30;
+        private readonly double _headPitchMaxThreshold = 25;
 
         private readonly double _headPitchMinThreshold = -15;
 
@@ -52,7 +49,7 @@ namespace AzureFaceCog.Controllers
         public WeatherForecastController(IHostingEnvironment env)
         {
             _env = env;
-            client = new FaceClient(new ApiKeyServiceClientCredentials("**************************"))
+            client = new FaceClient(new ApiKeyServiceClientCredentials("******************"))
             {
                 Endpoint = "https://eastus.api.cognitive.microsoft.com"
             };
@@ -72,14 +69,14 @@ namespace AzureFaceCog.Controllers
         }
 
         [HttpPost]
-        public async Task<IActionResult> ProcessVideoFile([FromBody] ImageRequest req, [FromQuery] int process = 1)
+        public async Task<IActionResult> ProcessVideoFile([FromBody] ImageRequest req)
         {
             try
             {
                 var fileName = "test.mp4";
                 byte[] imageBytes = Convert.FromBase64String(req.ImageFile);
 
-                string FilePath = Path.Combine(Directory.GetCurrentDirectory(), "files");
+                string FilePath = Path.Combine(Directory.GetCurrentDirectory(), "filess");
 
                 if (!System.IO.File.Exists(FilePath))
                 {
@@ -90,11 +87,17 @@ namespace AzureFaceCog.Controllers
                     }
                 }
                 //Extract
-                ExtractFrameFromVideo(FilePath, fileName);
+                 ExtractFrameFromVideo(FilePath, fileName);
 
                 //Convert Image to stream
-                var headPoseResult = await RunHeadGestureOnImageFrame(FilePath, process);
-                return Ok(headPoseResult);
+                var headPoseResult = await RunHeadGestureOnImageFrame(FilePath);
+                var response = new Response
+                {
+                    HeadNodingDetected = headPoseResult.Item1,
+                    HeadRollingDetected = headPoseResult.Item2,
+                    HeadShakingDetected = headPoseResult.Item3
+                };
+                return Ok(response);
             }
             catch (Exception ex)
             {
@@ -114,16 +117,23 @@ namespace AzureFaceCog.Controllers
             var i = 0;
             while (i < mp4.Metadata.Duration.Seconds)
             {
-                var options = new ConversionOptions { Seek = TimeSpan.FromSeconds(i) };
+                var options = new ConversionOptions { Seek = TimeSpan.FromSeconds(i),  };
                 var outputFile = new MediaFile { Filename = string.Format("{0}\\image-{1}.jpeg", Path.Combine(directory), i) };
                 engine.GetThumbnail(mp4, outputFile, options);
                 i++;
             }
         }
 
-        private async Task<string> RunHeadGestureOnImageFrame(string filePath, int process)
+        private async Task<Tuple<bool, bool, bool>> RunHeadGestureOnImageFrame(string filePath)
         {
             var headGestureResult = "";
+            bool runStepOne = true;
+            bool runStepTwo = true;
+            bool runStepThree = true;
+            bool stepOneComplete = false;
+            bool stepTwoComplete = false;
+            bool stepThreeComplete = false;
+
             var buff = new List<double>();
 
             var files = Directory.GetFiles(filePath);
@@ -146,6 +156,10 @@ namespace AzureFaceCog.Controllers
 
                 //TODO: USE IMAGE URL OF NETWORK
                 var faces = await client.Face.DetectWithUrlWithHttpMessagesAsync(uploadedContent, returnFaceId: false, returnFaceAttributes: attrs);
+                if (faces.Body.Count <= 0)
+                {
+                    continue;
+                }
                 var headPose = faces.Body.First().FaceAttributes?.HeadPose;
 
                 var pitch = headPose.Pitch;
@@ -153,29 +167,38 @@ namespace AzureFaceCog.Controllers
                 var yaw = headPose.Yaw;
 
 
-                if (process == 1)
+                if (runStepOne)
                 {
                     headGestureResult = StepOne(buff, pitch);
-
                     if (!string.IsNullOrEmpty(headGestureResult))
-                        return headGestureResult;
+                    {
+                        runStepOne = false;
+                        stepOneComplete = true;
+                    }
                 }
 
-                if (process == 2)
+                if (runStepTwo)
                 {
-                    headGestureResult = StepTwo(buff, yaw);
+                    headGestureResult = StepTwo(buff, pitch);
                     if (!string.IsNullOrEmpty(headGestureResult))
-                        return headGestureResult;
+                    {
+                        runStepTwo = false;
+                        stepTwoComplete = true;
+                    }
                 }
 
-                if (process == 3)
+                if (runStepThree)
                 {
-                    headGestureResult = StepThree(buff, roll);
+                    headGestureResult = StepThree(buff, pitch);
                     if (!string.IsNullOrEmpty(headGestureResult))
-                        return headGestureResult;
+                    {
+                        runStepThree = false;
+                        stepThreeComplete = true;
+                    }
+                        
                 }
             }
-            return "Head Gesture not completed";
+            return new Tuple<bool, bool, bool>(stepOneComplete, stepTwoComplete, stepThreeComplete);
         }
 
         private string StepOne(List<double> buff, double pitch)
@@ -255,5 +278,12 @@ public class LiveCameraResult
     public DetectedFace[] Faces { get; set; } = null;
 }
 
+
+public class Response
+{
+    public bool HeadNodingDetected { get; set; }
+    public bool HeadShakingDetected { get; set; }
+    public bool HeadRollingDetected { get; set; }
+}
 
 
