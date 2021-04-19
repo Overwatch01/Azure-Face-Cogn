@@ -24,9 +24,9 @@ namespace AzureFaceCog.Controllers
         };
 
         private static IFaceClient client;
-        private readonly double _headPitchMaxThreshold = 25;
+        private readonly double _headPitchMaxThreshold = 9; //25
 
-        private readonly double _headPitchMinThreshold = -15;
+        private readonly double _headPitchMinThreshold = -9; //-15
 
         private readonly double _headYawMaxThreshold = 20;
 
@@ -49,7 +49,7 @@ namespace AzureFaceCog.Controllers
         public WeatherForecastController(IHostingEnvironment env)
         {
             _env = env;
-            client = new FaceClient(new ApiKeyServiceClientCredentials("******************"))
+            client = new FaceClient(new ApiKeyServiceClientCredentials("e8ef40efa4704769860e661c210a0fc5"))
             {
                 Endpoint = "https://eastus.api.cognitive.microsoft.com"
             };
@@ -73,7 +73,7 @@ namespace AzureFaceCog.Controllers
         {
             try
             {
-                var fileName = "test.mp4";
+               var fileName = "test.mp4";
                 byte[] imageBytes = Convert.FromBase64String(req.ImageFile);
 
                 string FilePath = Path.Combine(Directory.GetCurrentDirectory(), "filess");
@@ -86,16 +86,16 @@ namespace AzureFaceCog.Controllers
                         System.IO.File.WriteAllBytes(Path.Combine(FilePath, fileName), imageBytes);
                     }
                 }
-                //Extract
-                 ExtractFrameFromVideo(FilePath, fileName);
+                // Extract
+                  ExtractFrameFromVideo(FilePath, fileName);
 
                 //Convert Image to stream
                 var headPoseResult = await RunHeadGestureOnImageFrame(FilePath);
                 var response = new Response
                 {
                     HeadNodingDetected = headPoseResult.Item1,
-                    HeadRollingDetected = headPoseResult.Item2,
-                    HeadShakingDetected = headPoseResult.Item3
+                    HeadShakingDetected = headPoseResult.Item2,
+                    HeadRollingDetected = headPoseResult.Item3
                 };
                 return Ok(response);
             }
@@ -134,7 +134,9 @@ namespace AzureFaceCog.Controllers
             bool stepTwoComplete = false;
             bool stepThreeComplete = false;
 
-            var buff = new List<double>();
+            var buffPitch = new List<double>();
+            var buffYaw = new List<double>();
+            var buffRoll = new List<double>();
 
             var files = Directory.GetFiles(filePath);
             foreach (var item in files)
@@ -169,7 +171,7 @@ namespace AzureFaceCog.Controllers
 
                 if (runStepOne)
                 {
-                    headGestureResult = StepOne(buff, pitch);
+                    headGestureResult = StepOne(buffPitch, pitch);
                     if (!string.IsNullOrEmpty(headGestureResult))
                     {
                         runStepOne = false;
@@ -179,7 +181,7 @@ namespace AzureFaceCog.Controllers
 
                 if (runStepTwo)
                 {
-                    headGestureResult = StepTwo(buff, pitch);
+                    headGestureResult = StepTwo(buffYaw, yaw);
                     if (!string.IsNullOrEmpty(headGestureResult))
                     {
                         runStepTwo = false;
@@ -189,7 +191,7 @@ namespace AzureFaceCog.Controllers
 
                 if (runStepThree)
                 {
-                    headGestureResult = StepThree(buff, pitch);
+                    headGestureResult = StepThree(buffRoll, roll);
                     if (!string.IsNullOrEmpty(headGestureResult))
                     {
                         runStepThree = false;
@@ -201,18 +203,18 @@ namespace AzureFaceCog.Controllers
             return new Tuple<bool, bool, bool>(stepOneComplete, stepTwoComplete, stepThreeComplete);
         }
 
-        private string StepOne(List<double> buff, double pitch)
+        private string StepOne(List<double> buffPitch, double pitch)
         {
-            buff.Add(pitch);
-            if (buff.Count > activeFrames)
+            buffPitch.Add(pitch);
+            if (buffPitch.Count > activeFrames)
             {
-                buff.RemoveAt(0);
+                buffPitch.RemoveAt(0);
             }
 
-            var max = buff.Max();
-            var min = buff.Min();
+            var max = buffPitch.Max();
+            var min = buffPitch.Min();
 
-            if (max > _headPitchMaxThreshold && min < _headPitchMinThreshold)
+            if (min < _headPitchMinThreshold && max > _headPitchMaxThreshold)
             {
                 return "Nodding Detected success.";
             }
@@ -222,16 +224,16 @@ namespace AzureFaceCog.Controllers
             }
         }
 
-        private string StepTwo(List<double> buff, double yaw)
+        private string StepTwo(List<double> buffYaw, double yaw)
         {
-            buff.Add(yaw);
-            if (buff.Count > activeFrames)
+            buffYaw.Add(yaw);
+            if (buffYaw.Count > activeFrames)
             {
-                buff.RemoveAt(0);
+                buffYaw.RemoveAt(0);
             }
 
-            var max = buff.Max();
-            var min = buff.Min();
+            var max = buffYaw.Max();
+            var min = buffYaw.Min();
 
             if (min < _headYawMinThreshold && max > _headYawMaxThreshold)
             {
@@ -243,16 +245,16 @@ namespace AzureFaceCog.Controllers
             }
         }
 
-        private string StepThree(List<double> buff, double roll)
+        private string StepThree(List<double> buffRoll, double roll)
         {
-            buff.Add(roll);
-            if (buff.Count > activeFrames)
+            buffRoll.Add(roll);
+            if (buffRoll.Count > activeFrames)
             {
-                buff.RemoveAt(0);
+                buffRoll.RemoveAt(0);
             }
 
-            var max = buff.Max();
-            var min = buff.Min();
+            var max = buffRoll.Max();
+            var min = buffRoll.Min();
 
             if (min < _headRollMinThreshold && max > _headRollMaxThreshold)
             {
